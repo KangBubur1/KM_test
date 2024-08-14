@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
@@ -27,17 +28,20 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.hilt.navigation.compose.hiltViewModel
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavController
 import coil.compose.rememberAsyncImagePainter
 import com.example.km_test.data.dto.UserListItemDto
+import com.example.km_test.ui.PullToRefreshLazyColumn
 
 @Composable
 fun ThirdScreen(
@@ -46,9 +50,21 @@ fun ThirdScreen(
 ) {
     val users by viewModel.userList.collectAsStateWithLifecycle()
     val isLoading by viewModel.isLoading.collectAsStateWithLifecycle()
+    val listState = rememberLazyListState()
+    val isRefreshing = viewModel.isRefreshing.value
 
     LaunchedEffect(Unit) {
         viewModel.fetchUser()
+    }
+
+
+    LaunchedEffect(listState) {
+        snapshotFlow { listState.layoutInfo.visibleItemsInfo.lastOrNull()?.index }
+            .collect { lastVisibleItemIndex ->
+                if (lastVisibleItemIndex == users.size - 1 && !isLoading) {
+                    viewModel.fetchUser()
+                }
+            }
     }
 
     Scaffold(
@@ -83,15 +99,32 @@ fun ThirdScreen(
             }
 
 
-            if (isLoading) {
+            PullToRefreshLazyColumn(
+                items = users,
+                content = { user ->
+                    UserItem(user) { selectedUser ->
+                        Log.d("ThirdScreen", "Selected User: $selectedUser")
+                        navController.previousBackStackEntry?.savedStateHandle?.set("selectedUser", selectedUser)
+                        navController.popBackStack()
+                    }
+                },
+                isRefreshing = isRefreshing,
+                onRefresh = {
+                    viewModel.resetPagination()
+                    viewModel.fetchUser()
+                },
+                modifier = Modifier.weight(1f),
+                lazyListState = listState
+            )
 
+            if (isLoading && users.isEmpty()) {
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .padding(16.dp),
                     contentAlignment = Alignment.Center
                 ) {
-                    Text(text = "Loading...")
+                    CircularProgressIndicator()
                 }
             } else if (users.isEmpty()) {
                 Text(
@@ -100,21 +133,10 @@ fun ThirdScreen(
                         .padding(16.dp)
                         .align(Alignment.CenterHorizontally)
                 )
-            } else {
-                LazyColumn(
-                    modifier = Modifier.weight(1f)
-                ) {
-                    items(users) { user ->
-                        UserItem(user) { selectedUser ->
-                            Log.d("ThirdScreen", "Selected User: $selectedUser")
-                            navController.previousBackStackEntry?.savedStateHandle?.set("selectedUser", selectedUser)
-                            navController.popBackStack()
-                        }
-                    }
-                }
             }
         }
     }
+
 }
 
 @Composable
@@ -139,13 +161,14 @@ fun UserItem(user: UserListItemDto, onClick: (String) -> Unit) {
             Row {
                 Text(
                     text = user.first_name,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 18.sp
                 )
-
-                Text(text = user.last_name)
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(text = user.last_name, fontWeight = FontWeight.Bold, fontSize = 18.sp)
             }
 
-            Text(text = user.email)
+            Text(text = user.email, fontSize = 12.sp, color = androidx.compose.ui.graphics.Color.Gray)
         }
     }
 }
